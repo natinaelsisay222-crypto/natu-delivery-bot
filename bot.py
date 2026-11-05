@@ -10,6 +10,9 @@ logging.basicConfig(level=logging.INFO)
 
 TOKEN = os.getenv("NATU_BOT_TOKEN")
 ADMIN_ID = os.getenv("NATU_ADMIN_ID")
+PORT = int(os.getenv("PORT", "10000"))
+HOSTNAME = os.getenv("RENDER_EXTERNAL_HOSTNAME")
+WEBHOOK_PATH = os.getenv("WEBHOOK_PATH", "natu-delivery-webhook")
 
 LANG, NAME, PHONE, ITEM, PICKUP, DROP, CONFIRM = range(7)
 
@@ -72,7 +75,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ["🇪🇹 Afaan Oromoo"],
         ["🇬🇧 English"]
     ]
-
     await update.message.reply_text(
         TEXTS["am"]["welcome"],
         reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
@@ -82,7 +84,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def choose_language(update: Update, context: ContextTypes.DEFAULT_TYPE):
     choice = update.message.text
-
     if "Afaan" in choice:
         selected = "om"
     elif "English" in choice:
@@ -92,7 +93,6 @@ async def choose_language(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     context.user_data.clear()
     context.user_data["lang"] = selected
-
     await update.message.reply_text(TEXTS[selected]["name"])
     return NAME
 
@@ -133,14 +133,9 @@ async def get_drop(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"{t[3]}: {d['pickup']}\n"
         f"{t[4]}: {d['drop']}"
     )
-
     context.user_data["summary"] = summary
 
-    keyboard = [[
-        TEXTS[lang(context)]["yes"],
-        TEXTS[lang(context)]["no"]
-    ]]
-
+    keyboard = [[TEXTS[lang(context)]["yes"], TEXTS[lang(context)]["no"]]]
     await update.message.reply_text(
         summary + "\n\n" + TEXTS[lang(context)]["confirm"],
         reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
@@ -157,15 +152,12 @@ async def confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if ADMIN_ID:
             await context.bot.send_message(
                 chat_id=int(ADMIN_ID),
-                text="🚚 NEW NATU DELIVERY ORDER\n\n"
-                + context.user_data["summary"]
+                text="🚚 NEW NATU DELIVERY ORDER\n\n" + context.user_data["summary"]
             )
-
         await update.message.reply_text(t["done"])
 
     elif answer == t["no"]:
         await update.message.reply_text(t["cancel"])
-
     else:
         await update.message.reply_text(t["invalid"])
         return CONFIRM
@@ -192,6 +184,9 @@ def main():
     if not TOKEN:
         raise RuntimeError("NATU_BOT_TOKEN is missing")
 
+    if not HOSTNAME:
+        raise RuntimeError("RENDER_EXTERNAL_HOSTNAME is missing")
+
     app = Application.builder().token(TOKEN).build()
 
     conversation = ConversationHandler(
@@ -211,8 +206,16 @@ def main():
     app.add_handler(conversation)
     app.add_handler(CommandHandler("myid", myid))
 
-    print("NATU DELIVERY BOT IS RUNNING!")
-    app.run_polling()
+    webhook_url = f"https://{HOSTNAME}/{WEBHOOK_PATH}"
+
+    print("NATU DELIVERY BOT WEBHOOK IS STARTING...")
+
+    app.run_webhook(
+        listen="0.0.0.0",
+        port=PORT,
+        url_path=WEBHOOK_PATH,
+        webhook_url=webhook_url
+    )
 
 
 if __name__ == "__main__":
